@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <avr/sleep.h>//this AVR library contains the methods that controls the sleep modes
 
 #include "bitmaps.h"
 
@@ -33,22 +34,10 @@ unsigned long sleepInterval = 5000;
 unsigned long sleepTimeStarted = millis();
 bool isScreenSleeping = false;
 
+// flag for checking which animation frame to draw
 bool should_draw_up = true;
 
-void wakeUpScreen() {
-  display.ssd1306_command(SSD1306_DISPLAYON);
-  sleepTimeStarted = millis(); 
-  isScreenSleeping = false;
-}
-
-bool checkScreenTimeout() {
-  bool isUp = (millis() - sleepTimeStarted >= sleepInterval);
-  if(isUp) {
-    display.ssd1306_command(SSD1306_DISPLAYOFF);
-    isScreenSleeping = true;
-  }
-  return isUp;
-}
+#define interruptPin 7 // setup for sleep
 
 bool check_button_state() {
   bool isDifferent = false;
@@ -123,14 +112,63 @@ void drawScreen(void) {
   display.display();
 }
 
+// Interrupt process, do not do anything other than disabling sleep here...
+void wakeUp() {
+  sleep_disable();
+}
+
+void sleep() {
+  if(isScreenSleeping) {
+    //return;
+  }
+  Serial.println("Going to sleep...");
+
+  // disable the USB
+  USBCON |= _BV(FRZCLK);  //freeze USB clock
+  PLLCSR &= ~_BV(PLLE);   // turn off USB PLL
+  USBCON &= ~_BV(USBE);   // disable USB
+
+  isScreenSleeping = true;
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  sleep_enable();
+  attachInterrupt(digitalPinToInterrupt(interruptPin), wakeUp, LOW);
+  sleep_mode();
+
+  // we come here after wakeup
+  detachInterrupt(digitalPinToInterrupt(interruptPin));
+  display.ssd1306_command(SSD1306_DISPLAYON);
+
+  delay(100);
+  sei();
+  USBDevice.attach(); // now re-open the serial port, hope that it is assigned same 'COMxx'
+  delay(100);
+  Serial.begin(9600);
+  Serial.println("Just woke up!");
+  isScreenSleeping = false;
+}
+
+bool checkScreenTimeout() {
+  bool isUp = (millis() - sleepTimeStarted >= sleepInterval);
+  if(isUp) {
+    sleepTimeStarted = millis();
+    display.ssd1306_command(SSD1306_DISPLAYOFF);
+    Serial.println("SLEEEEP");
+    sleep();
+  }
+  return isUp;
+}
+
 void setup() {
-  Serial.begin(9599);
+  Serial.begin(9600);
 
   // SSD1305_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1305 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
+
+  // Set interrupt pin and assign test process
+  pinMode(interruptPin, INPUT_PULLUP);
 
   // Clear the buffer
   display.clearDisplay();
@@ -148,9 +186,9 @@ void loop() {
     if(!isScreenSleeping) {
       incrementCounter();
     }
-    wakeUpScreen();
   }
   
   drawScreen();
   checkScreenTimeout();
+  Serial.println("Looping");
 }
