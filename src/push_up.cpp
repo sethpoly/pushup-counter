@@ -4,16 +4,10 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <avr/sleep.h>//this AVR library contains the methods that controls the sleep modes
-
 #include "bitmaps.h"
+#include "display_config.h"
 
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 32 // OLED display height, in pixels
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library. 
-#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+// initialize OLED display
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 const int buttonPin = 10;
@@ -117,16 +111,24 @@ void wakeUp() {
   sleep_disable();
 }
 
-void sleep() {
-  if(isScreenSleeping) {
-    //return;
-  }
-  Serial.println("Going to sleep...");
-
-  // disable the USB
+void detachUsb() {
   USBCON |= _BV(FRZCLK);  //freeze USB clock
   PLLCSR &= ~_BV(PLLE);   // turn off USB PLL
   USBCON &= ~_BV(USBE);   // disable USB
+}
+
+void attachUsb() {
+  sei();
+  USBDevice.attach(); // now re-open the serial port, hope that it is assigned same 'COMxx'
+
+  // re-enable serial port
+  delay(100);
+  Serial.begin(9600);
+}
+
+void sleep() {
+  // disable the USB
+  detachUsb();
 
   isScreenSleeping = true;
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -138,12 +140,9 @@ void sleep() {
   detachInterrupt(digitalPinToInterrupt(interruptPin));
   display.ssd1306_command(SSD1306_DISPLAYON);
 
-  delay(100);
-  sei();
-  USBDevice.attach(); // now re-open the serial port, hope that it is assigned same 'COMxx'
-  delay(100);
-  Serial.begin(9600);
-  Serial.println("Just woke up!");
+  // attach usb again
+  attachUsb();
+
   isScreenSleeping = false;
 }
 
@@ -152,7 +151,6 @@ bool checkScreenTimeout() {
   if(isUp) {
     sleepTimeStarted = millis();
     display.ssd1306_command(SSD1306_DISPLAYOFF);
-    Serial.println("SLEEEEP");
     sleep();
   }
   return isUp;
@@ -169,14 +167,10 @@ void setup() {
 
   // Set interrupt pin and assign test process
   pinMode(interruptPin, INPUT_PULLUP);
+  pinMode(buttonPin, INPUT);
 
   // Clear the buffer
   display.clearDisplay();
-
-  // Setup buttons
-  pinMode(buttonPin, INPUT);
-
-  // Initial display
   drawScreen();
 }
 
