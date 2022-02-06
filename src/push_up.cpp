@@ -10,10 +10,9 @@
 // initialize OLED display
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-const int buttonPin = 10;
 int pushUpCount = 0;
-int buttonState;
-int lastButtonState = LOW;   // the previous reading from the input pin
+int buttonState = HIGH;
+int lastButtonState = HIGH;   // the previous reading from the input pin
 
 // debounce for button
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
@@ -35,7 +34,7 @@ bool should_draw_up = true;
 
 bool check_button_state() {
   bool isDifferent = false;
-  int reading = digitalRead(buttonPin);
+  int reading = digitalRead(interruptPin);
 
   // If the switch changed, due to noise or pressing:
   if (reading != lastButtonState) {
@@ -146,10 +145,14 @@ void sleep() {
   isScreenSleeping = false;
 }
 
+void resetScreenTimeout() {
+  sleepTimeStarted = millis();
+}
+
 bool checkScreenTimeout() {
   bool isUp = (millis() - sleepTimeStarted >= sleepInterval);
   if(isUp) {
-    sleepTimeStarted = millis();
+    resetScreenTimeout();
     display.ssd1306_command(SSD1306_DISPLAYOFF);
     sleep();
   }
@@ -167,7 +170,6 @@ void setup() {
 
   // Set interrupt pin and assign test process
   pinMode(interruptPin, INPUT_PULLUP);
-  pinMode(buttonPin, INPUT);
 
   // Clear the buffer
   display.clearDisplay();
@@ -178,6 +180,7 @@ void loop() {
   if(check_button_state()) {
     // Don't incremement if we were recently asleep
     if(!isScreenSleeping) {
+      resetScreenTimeout();
       incrementCounter();
     }
   }
